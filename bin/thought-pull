@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+"""Pull new thoughts from the private inbox repo. Outbound git only, stdlib only, no daemon.
+
+Appends new items to ~/.local/share/thought-router/inbox.jsonl (deduped by id) and pushes a
+pulled/<id> marker per item so the phone can show PULLED. Safe to run any number of times.
+"""
+import json, os, re, subprocess, sys, time
+from datetime import datetime, timezone
+
+REPO = os.environ.get("THOUGHT_INBOX_REPO", "dshak1/thought-inbox")
+BASE = os.path.expanduser(os.environ.get("THOUGHT_ROUTER_HOME", "~/.local/share/thought-router"))
+CLONE = os.path.join(BASE, "inbox-repo")
+JSONL = os.path.join(BASE, "inbox.jsonl")
+UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+GIT = ["git", "-c", "credential.helper=", "-c", "credential.helper=!gh auth git-credential"]
+
+
+def git(*args, cwd=CLONE, check=True):
+    r = subprocess.run(GIT + list(args), cwd=cwd, capture_output=True, text=True)
+    if check and r.returncode != 0:
+        raise RuntimeError("git %s failed: %s" % (" ".join(args), r.stderr.strip()))
+    return r
+
+
+def ensure_clone():
+    os.makedirs(BASE, exist_ok=True)
+    if not os.path.isdir(os.path.join(CLONE, ".git")):
+        git("clone", "--quiet", "https://github.com/%s.git" % REPO, CLONE, cwd=BASE)
+        git("config", "user.name", "thought-router")
+        git("config", "user.email", "thought-router@users.noreply.github.com")
+
+
+def branch():
+    return git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+
+
+def known_ids():
+    ids = set()
+    if os.path.exists(JSONL):
+        with open(JSONL, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    ids.add(json.loads(line)["id"])
+                except Exception:
+                    pass
+    return ids
+
+
+def main():
+    ensure_clone()
+    b = branch()
+    git("fetch", "--quiet", "origin")
+    git("reset", "--quiet", "--hard", "origin/" + b)
+    tdir = os.path.join(CLONE, "thoughts")
+    pdir = os.path.join(CLONE, "pulled")
+    os.makedirs(pdir, exist_ok=True)
+    have = known_ids()
+    new, skipped, markers = [], [], []
+    for name in sorted(os.listdir(tdir)) if os.path.isdir(tdir) else []:
+        tid = name[:-5] if name.endswith(".json") else None
+        if not tid or not UUID.match(tid):
+            skipped.append(name)
+            continue
+        try:
+            with open(os.path.join(tdir, name), encoding="utf-8") as f:
+                d = json.load(f)
+            if d.get("id") != tid or not isinstance(d.get("text"), str):
+                raise ValueError("bad shape")
+        except Exception:
+            skipped.append(name)
+            continue
+        if tid not in have:
+            new.append({"id": tid, "text": d["text"], "created_at": d.get("created_at", ""),
+                        "device": d.get("device", ""),
+                        "pulled_at": datetime.now(timezone.utc).isoformat(timespec="seconds")})
+        if not os.path.exists(os.path.join(pdir, tid)):
+            markers.append(tid)
+    # Record locally first (durable), then publish markers.
+    if new:
+        with open(JSONL, "a", encoding="utf-8") as f:
+            for it in new:
+                f.write(json.dumps(it, ensure_ascii=False) + "\n")
+    pushed = 0
+    if markers:
+        for tid in markers:
+            with open(os.path.join(pdir, tid), "w") as f:
+                f.write(datetime.now(timezone.utc).isoformat(timespec="seconds") + "\n")
+        git("add", "pulled")
+        git("commit", "--quiet", "-m", "pulled %d" % len(markers))
+        for attempt in range(4):
+            r = git("push", "--quiet", "origin", b, check=False)
+            if r.returncode == 0:
+                pushed = len(markers)
+                break
+            git("pull", "--quiet", "--rebase", "origin", b, check=False)
+            time.sleep(1 + attempt)
+        else:
+            print("warning: could not push markers (will retry next run): " + r.stderr.strip(), file=sys.stderr)
+    print("new: %d, markers pushed: %d, skipped: %d, total local: %d" % (len(new), pushed, len(skipped), len(have) + len(new)))
+    for s in skipped:
+        print("skipped malformed: %s" % s, file=sys.stderr)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        print("thought-pull: %s" % e, file=sys.stderr)
+        sys.exit(1)

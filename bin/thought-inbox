@@ -1,0 +1,40 @@
+#!/usr/bin/env python3
+"""List pulled thoughts, newest first. Usage: thought-inbox [-n N] [--full] [--json]"""
+import argparse, json, os, re
+
+BASE = os.path.expanduser(os.environ.get("THOUGHT_ROUTER_HOME", "~/.local/share/thought-router"))
+JSONL = os.path.join(BASE, "inbox.jsonl")
+CTRL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")  # strip terminal escape / control chars from untrusted text
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("-n", type=int, default=20)
+    ap.add_argument("--full", action="store_true", help="show full ids")
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args()
+    items = []
+    if os.path.exists(JSONL):
+        with open(JSONL, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    items.append(json.loads(line))
+                except Exception:
+                    pass
+    items.sort(key=lambda i: i.get("created_at", ""), reverse=True)
+    items = items[: a.n]
+    if a.json:
+        print(json.dumps(items, ensure_ascii=False, indent=1))
+        return
+    if not items:
+        print("inbox empty (run thought-pull)")
+        return
+    for i in items:
+        tid = i["id"] if a.full else i["id"][:8]
+        ts = i.get("created_at", "")[:19].replace("T", " ")
+        text = CTRL.sub("", i.get("text", "")).replace("\n", "\n    ")
+        print("%s  %s UTC  %s" % (tid, ts, text))
+
+
+if __name__ == "__main__":
+    main()

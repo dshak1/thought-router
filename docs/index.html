@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#111827">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src https://api.github.com; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; manifest-src 'self'">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Thought router</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <p class="warn">Personal thoughts only. No work-confidential content.</p>
+  <div id="authbanner" class="banner" hidden></div>
+  <form id="form" autocomplete="off">
+    <textarea id="text" rows="6" placeholder="Type or dictate a thought" aria-label="Thought"></textarea>
+    <button id="send" type="submit">Send</button>
+  </form>
+  <div class="bar">
+    <span id="summary"></span>
+    <button id="retry" type="button" class="small">Retry</button>
+    <button id="refresh" type="button" class="small">Refresh</button>
+  </div>
+  <ul id="list"></ul>
+  <details id="settings">
+    <summary>Setup</summary>
+    <p id="tokenstate"></p>
+    <input id="token" type="password" placeholder="GitHub token (inbox only)" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <button id="savetoken" type="button" class="small">Save token</button>
+    <button id="cleartoken" type="button" class="small">Remove token</button>
+  </details>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
