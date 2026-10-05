@@ -50,7 +50,7 @@ listeners.push(async m => {
   }
 });
 await cmd('Page.enable'); await cmd('Runtime.enable'); await cmd('Network.enable');
-await cmd('Fetch.enable', { patterns: [{ urlPattern: ORIGIN + '/*' }] });
+if (!process.env.LIVE) await cmd('Fetch.enable', { patterns: [{ urlPattern: ORIGIN + '/*' }] });
 await cmd('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
 const ev = async expr => { const r = await cmd('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true }); if (r.exceptionDetails) throw new Error(r.exceptionDetails.text + ' ' + JSON.stringify(r.exceptionDetails.exception?.description)); return r.result.value; };
 const goto = async url => { await cmd('Page.navigate', { url }); await sleep(1200); };
@@ -120,6 +120,17 @@ try {
   await ev(`document.getElementById('retry').click(); 1`);
   const rec = await waitFor(`![...document.querySelectorAll('.badge')].some(b=>b.textContent==='SAVED ON PHONE')`, 20000);
   check('Retry button uploads stuck items once token fixed', rec, JSON.stringify(await badges()));
+  // 7. PULLED status: run thought-pull on the computer, then Refresh on the phone
+  execFileSync(resolve(ROOT, '../bin/thought-pull'), { env: process.env });
+  await ev(`document.getElementById('refresh').click(); 1`);
+  const pulled = await waitFor(`[...document.querySelectorAll('.badge')].every(b=>b.textContent==='PULLED')`, 20000);
+  check('after thought-pull, phone shows PULLED', pulled, JSON.stringify(await badges()));
+  await shot('05-pulled-390x844.png');
+  if (process.env.LIVE) {
+    const sw = await ev(`navigator.serviceWorker.getRegistration().then(r=>!!r)`);
+    const mf = JSON.parse((await cmd('Page.getAppManifest')).data || '{}').name;
+    check('LIVE: service worker registered, manifest served', sw === true && mf === 'Thought router', `sw=${sw} manifest=${mf}`);
+  }
   console.log('STAMP ' + stamp);
 } catch (e) { console.log('ERROR ' + e.message); results.push(false); }
 finally { proc.kill(); rmSync(profile, { recursive: true, force: true }); console.log(results.every(Boolean) ? 'ALL PASS' : 'SOME FAILED'); process.exit(results.every(Boolean) ? 0 : 1); }
