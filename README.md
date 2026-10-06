@@ -23,3 +23,8 @@ Only idle tabs receive drafts; others stay queued. Default is a dry run; `--stag
 `bin/thought-hook` is wired to Claude Code `SessionStart` and `UserPromptSubmit` in `~/.claude/settings.json`
 (backup: `settings.json.bak-thought-router`). It pulls (at most every 90 s), and shows each new thought once with
 instructions to propose actions and wait for a yes. No daemon. Remove the two `thought-hook` entries to undo.
+
+## Auto commands
+Short thoughts matching a strict grammar run on their own (safe and reversible only): `!tab <name>`,
+`new terminal <name>`, `create a new terminal called <name>` create a herdr tab. Anything longer or with other
+text is shown for a yes instead.
