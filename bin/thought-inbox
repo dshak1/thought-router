@@ -33,6 +33,10 @@ def main():
         tid = i["id"] if a.full else i["id"][:8]
         ts = i.get("created_at", "")[:19].replace("T", " ")
         text = CTRL.sub("", i.get("text", "")).replace("\n", "\n    ")
+        if i.get("kind") == "page":
+            tx = os.path.join(BASE, "transcripts", i["id"] + ".txt")
+            text = "[note page %s/%s scan %s, %s] %s" % (i.get("page"), i.get("total"), i.get("scan"),
+                   "transcribed" if os.path.exists(tx) else "untranscribed (run thought-transcribe)", i.get("file", ""))
         print("%s  %s UTC  %s" % (tid, ts, text))
 
 

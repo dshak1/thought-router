@@ -18,3 +18,5 @@ li .m{display:flex;gap:8px;align-items:center;margin-top:6px;font-size:12px;colo
 .saved{background:var(--wait)}.received{background:var(--ok)}.pulled{background:#a78bfa}
 .err{color:var(--err)}
 details{margin-top:20px;color:var(--mut)}
+.scan{display:flex;gap:10px;align-items:center;margin-top:12px;color:var(--mut);font-size:14px}
+.thumb{display:block;max-width:96px;max-height:96px;margin-top:6px;border-radius:6px}

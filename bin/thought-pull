@@ -4,13 +4,15 @@
 Appends new items to ~/.local/share/thought-router/inbox.jsonl (deduped by id) and pushes a
 pulled/<id> marker per item so the phone can show PULLED. Safe to run any number of times.
 """
-import json, os, re, subprocess, sys, time
+import json, os, re, shutil, subprocess, sys, time
 from datetime import datetime, timezone
 
 REPO = os.environ.get("THOUGHT_INBOX_REPO", "dshak1/thought-inbox")
 BASE = os.path.expanduser(os.environ.get("THOUGHT_ROUTER_HOME", "~/.local/share/thought-router"))
 CLONE = os.path.join(BASE, "inbox-repo")
 JSONL = os.path.join(BASE, "inbox.jsonl")
+ATTACH = os.path.join(BASE, "attachments")
+FILE_RE = re.compile(r"^attachments/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jpg$")
 UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 GIT = ["git", "-c", "credential.helper=", "-c", "credential.helper=!gh auth git-credential"]
 
@@ -70,9 +72,19 @@ def main():
             skipped.append(name)
             continue
         if tid not in have:
-            new.append({"id": tid, "text": d["text"], "created_at": d.get("created_at", ""),
-                        "device": d.get("device", ""),
-                        "pulled_at": datetime.now(timezone.utc).isoformat(timespec="seconds")})
+            rec = {"id": tid, "text": d["text"], "created_at": d.get("created_at", ""),
+                   "device": d.get("device", ""),
+                   "pulled_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+            if d.get("kind") == "page":
+                src = d.get("file", "")
+                if not FILE_RE.match(src) or not os.path.isfile(os.path.join(CLONE, src)) or os.path.basename(src) != tid + ".jpg":
+                    skipped.append(name + " (missing or bad image)")
+                    continue
+                os.makedirs(ATTACH, exist_ok=True)
+                shutil.copyfile(os.path.join(CLONE, src), os.path.join(ATTACH, tid + ".jpg"))
+                rec.update(kind="page", scan=str(d.get("scan", ""))[:16], page=d.get("page"), total=d.get("total"),
+                           file=os.path.join(ATTACH, tid + ".jpg"))
+            new.append(rec)
         if not os.path.exists(os.path.join(pdir, tid)):
             markers.append(tid)
     # Record locally first (durable), then publish markers.

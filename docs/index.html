@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#111827">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src https://api.github.com; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; manifest-src 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src https://api.github.com; img-src 'self' data: blob:; media-src blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; manifest-src 'self'">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -20,6 +20,11 @@
     <textarea id="text" autofocus rows="6" placeholder="Type or dictate a thought. Start with @tab to address a terminal tab." aria-label="Thought"></textarea>
     <button id="send" type="submit">Send</button>
   </form>
+  <div class="scan">
+    <button id="scanbtn" type="button" class="small">Scan notes (video or photos)</button>
+    <input id="scanfile" type="file" accept="video/*,image/*" multiple hidden>
+    <span id="scanstatus"></span>
+  </div>
   <div class="bar">
     <span id="summary"></span>
     <button id="retry" type="button" class="small">Retry</button>
@@ -35,5 +40,6 @@
   </details>
 </main>
 <script src="app.js"></script>
+<script src="scan.js"></script>
 </body>
 </html>

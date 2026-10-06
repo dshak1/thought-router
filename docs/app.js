@@ -59,17 +59,16 @@ function headers() {
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // ---- upload ----
-// Returns {ok:true} or {ok:false, fatal:bool, msg}. 422 "sha wasn't supplied" means the file already exists: success.
-async function upload(item) {
+// PUT one file, create-only. Returns {ok:true} or {ok:false, fatal:bool, msg}. 422 "sha wasn't supplied" means it already exists: success.
+async function putFile(path, contentB64, message) {
   if (!getToken()) return { ok: false, fatal: true, msg: 'No token set. Open Setup and add the token.' };
-  const body = JSON.stringify({ id: item.id, text: item.text, created_at: item.created_at, device: item.device });
   for (let attempt = 0; attempt < 4; attempt++) {
     let r;
     try {
-      r = await fetch(API + 'thoughts/' + item.id + '.json', {
+      r = await fetch(API + path, {
         method: 'PUT',
         headers: Object.assign({ 'Content-Type': 'application/json' }, headers()),
-        body: JSON.stringify({ message: 'thought ' + item.id, content: b64utf8(body) })
+        body: JSON.stringify({ message, content: contentB64 })
       });
     } catch (e) {
       return { ok: false, fatal: false, msg: 'No connection. Will retry.' };
@@ -84,9 +83,31 @@ async function upload(item) {
     if (r.status === 403 && /rate limit/i.test(m)) return { ok: false, fatal: false, msg: 'Rate limited. Will retry.' };
     if (r.status === 403) return { ok: false, fatal: true, msg: 'Token not allowed to write (403). Needs Contents read and write on the inbox repo.' };
     if (r.status === 404) return { ok: false, fatal: true, msg: 'Inbox repo not reachable with this token (404). Check token repo access.' };
+    if (r.status === 413) return { ok: false, fatal: true, msg: 'File too large for GitHub (413).' };
     return { ok: false, fatal: false, msg: 'Server said ' + r.status + '. Will retry.' };
   }
   return { ok: false, fatal: false, msg: 'Busy (409). Will retry.' };
+}
+
+function blobToB64(blob) {
+  return new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => res(String(fr.result).split(',')[1]);
+    fr.onerror = () => rej(fr.error);
+    fr.readAsDataURL(blob);
+  });
+}
+
+// A note page uploads its image first, then the JSON that references it, so the computer never sees a dangling reference.
+async function upload(item) {
+  const meta = { id: item.id, text: item.text || '', created_at: item.created_at, device: item.device };
+  if (item.kind === 'page') {
+    const file = 'attachments/' + item.id + '.jpg';
+    const img = await putFile(file, await blobToB64(item.blob), 'page ' + item.id);
+    if (!img.ok) return img;
+    Object.assign(meta, { kind: 'page', scan: item.scan, page: item.page, total: item.total, file });
+  }
+  return putFile('thoughts/' + item.id + '.json', b64utf8(JSON.stringify(meta)), 'thought ' + item.id);
 }
 
 let flushing = false;
@@ -97,7 +118,7 @@ async function flush() {
     const items = (await allItems()).filter(i => i.state === 'saved').reverse();
     for (const it of items) {
       const res = await upload(it);
-      if (res.ok) { it.state = 'received'; it.err = ''; it.received_at = new Date().toISOString(); }
+      if (res.ok) { it.state = 'received'; it.err = ''; it.received_at = new Date().toISOString(); if (it.kind === 'page') it.blob = null; }
       else { it.err = res.msg; it.attempts = (it.attempts || 0) + 1; }
       await putItem(it);
       await render();
@@ -135,7 +156,11 @@ async function render() {
   ul.textContent = '';
   for (const it of items) {
     const li = document.createElement('li');
-    const t = document.createElement('div'); t.className = 't'; t.textContent = it.text;
+    const t = document.createElement('div'); t.className = 't';
+    if (it.kind === 'page') {
+      t.textContent = 'Note page ' + it.page + ' of ' + it.total;
+      if (it.blob) { const im = document.createElement('img'); im.className = 'thumb'; im.alt = ''; im.src = URL.createObjectURL(it.blob); im.onload = () => URL.revokeObjectURL(im.src); t.append(im); }
+    } else t.textContent = it.text;
     const m = document.createElement('div'); m.className = 'm';
     const b = document.createElement('span'); b.className = 'badge ' + it.state; b.textContent = LABEL[it.state];
     const when = document.createElement('span'); when.textContent = new Date(it.created_at).toLocaleString();
