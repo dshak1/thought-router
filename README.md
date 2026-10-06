@@ -24,7 +24,6 @@ Only idle tabs receive drafts; others stay queued. Default is a dry run; `--stag
 (backup: `settings.json.bak-thought-router`). It pulls (at most every 90 s), and shows each new thought once with
 instructions to propose actions and wait for a yes. No daemon. Remove the two `thought-hook` entries to undo.
 
-## Auto commands
-Short thoughts matching a strict grammar run on their own (safe and reversible only): `!tab <name>`,
-`new terminal <name>`, `create a new terminal called <name>` create a herdr tab. Anything longer or with other
-text is shown for a yes instead.
+## Meta-window
+No fixed commands. Each new thought is shown to the receiving session, which analyzes it and acts per `META.md`
+(vault, Notion, herdr drafts, Telegram, questions), asking first only for outward or destructive actions.
