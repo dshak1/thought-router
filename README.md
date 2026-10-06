@@ -32,6 +32,6 @@ No fixed commands. Each new thought is shown to the receiving session, which ana
 "Scan notes" on the phone page takes a video (or photos). The phone keeps one sharp frame per distinct page
 (ink-overlap comparison, repeats dropped), shows each as a note page with the usual SAVED, RECEIVED, PULLED states,
 and uploads image first, JSON second. `thought-pull` copies images to `~/.local/share/thought-router/attachments/`.
-`thought-transcribe` reads each page with a small vision model (`claude -p --model haiku`, Read tool only) and writes
+`thought-transcribe` reads each page with a small vision model (`claude -p --model sonnet`, Read tool only; haiku failed with "Prompt is too long" on images here) and writes
 `transcripts/<id>.txt` plus `notes/<scan>.md`. Thresholds are untuned on real handwriting; override with localStorage `tr_scan`.
 Test: `tools/e2e-scan.mjs` (synthetic video, real private repo, CLEAN=1 removes test pages).

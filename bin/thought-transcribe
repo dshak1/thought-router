@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Transcribe pulled note pages (photos of handwriting) with a small vision model, then assemble notes per scan.
 
-  thought-transcribe [--model haiku] [--limit N] [--dry-run]
+  thought-transcribe [--model sonnet] [--limit N] [--dry-run]
 
 Runs `claude -p` headless with no settings or hooks loaded, from the data directory, and only the Read tool,
 so the page image is the only input. Output: ~/.local/share/thought-router/transcripts/<id>.txt per page and
@@ -24,7 +24,7 @@ PROMPT = ("Read the image file at %s. It is a photo of a handwritten or printed 
 def transcribe(path, model):
     r = subprocess.run(["claude", "-p", PROMPT % path, "--model", model, "--tools", "Read",
                         "--allowedTools", "Read", "--setting-sources", "", "--no-session-persistence"],
-                       capture_output=True, text=True, timeout=180, cwd=BASE)
+                       capture_output=True, text=True, timeout=180, cwd=BASE, stdin=subprocess.DEVNULL)
     if r.returncode != 0 or not r.stdout.strip():
         raise RuntimeError((r.stderr or r.stdout).strip()[:200] or "empty output")
     return r.stdout.strip()
@@ -32,7 +32,7 @@ def transcribe(path, model):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default="haiku")
+    ap.add_argument("--model", default="sonnet")
     ap.add_argument("--limit", type=int, default=50)
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
