@@ -18,3 +18,8 @@ Token: fine-grained PAT, repository access only `thought-inbox`, Contents read a
 `thought-route` stages a thought as an editable draft (no Enter) only when it starts with `@<tab>`,
 for example `@rema-design add a dark mode toggle`. Unaddressed thoughts go nowhere and no model reads them.
 Only idle tabs receive drafts; others stay queued. Default is a dry run; `--stage` applies it.
+
+## Session hook
+`bin/thought-hook` is wired to Claude Code `SessionStart` and `UserPromptSubmit` in `~/.claude/settings.json`
+(backup: `settings.json.bak-thought-router`). It pulls (at most every 90 s), and shows each new thought once with
+instructions to propose actions and wait for a yes. No daemon. Remove the two `thought-hook` entries to undo.
