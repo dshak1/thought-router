@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+"""Stage explicitly addressed thoughts into a herdr tab as an editable draft. Never presses Enter.
+
+A thought is routed only when YOU address it: the text starts with @<tab> (a tab label, exact or
+unique substring), e.g. "@rema-design add a dark mode toggle". Unaddressed thoughts are never
+sent anywhere and no model reads them. No LLM is involved; the text is staged verbatim.
+
+  thought-route                 dry run: show what would be staged where (default)
+  thought-route --stage         stage the drafts (herdr-draft: types text, no Enter)
+  thought-route --status idle,unknown   tab states that may receive a draft (default: idle)
+
+Safety: only tabs whose agent is idle receive a draft, so typed or in-progress input is not
+mixed with it; working, blocked or unknown tabs keep the thought queued. Each item is staged at
+most once (state in ~/.local/share/thought-router/routed.json).
+"""
+import argparse, json, os, re, subprocess, sys
+from datetime import datetime, timezone
+
+BASE = os.path.expanduser(os.environ.get("THOUGHT_ROUTER_HOME", "~/.local/share/thought-router"))
+JSONL = os.path.join(BASE, "inbox.jsonl")
+STATE = os.path.join(BASE, "routed.json")
+ADDR = re.compile(r"^\s*@([\w.\-]+)\s+(.+)$", re.S)
+CTRL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+
+
+def herdr_tabs():
+    r = subprocess.run(["herdr", "tab", "list"], capture_output=True, text=True)
+    if r.returncode != 0:
+        sys.exit("herdr tab list failed: " + r.stderr.strip())
+    return json.loads(r.stdout)["result"]["tabs"]
+
+
+def resolve(tabs, label):
+    want = label.lower()
+    exact = [t for t in tabs if (t.get("label") or "").lower() == want]
+    if exact:
+        return exact[0], None
+    subs = [t for t in tabs if want in (t.get("label") or "").lower()]
+    if len(subs) == 1:
+        return subs[0], None
+    return None, ("no tab matches" if not subs else "ambiguous: " + ", ".join(t["label"] for t in subs))
+
+
+def load(path, default):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return default
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--stage", action="store_true")
+    ap.add_argument("--status", default="idle")
+    a = ap.parse_args()
+    ok_status = set(a.status.split(","))
+    items = []
+    if os.path.exists(JSONL):
+        with open(JSONL, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    items.append(json.loads(line))
+                except Exception:
+                    pass
+    state = load(STATE, {})
+    todo = []
+    for it in sorted(items, key=lambda i: i.get("created_at", "")):
+        m = ADDR.match(CTRL.sub(" ", it.get("text", "")))
+        if m and it["id"] not in state:
+            todo.append((it, m.group(1), " ".join(m.group(2).split())))
+    if not todo:
+        print("nothing addressed to a tab (start a thought with @<tab>)")
+        return
+    tabs = herdr_tabs()
+    for it, label, text in todo:
+        tab, err = resolve(tabs, label)
+        head = "%s  @%s" % (it["id"][:8], label)
+        if err:
+            print("%s  SKIP (%s)" % (head, err))
+            continue
+        if tab["agent_status"] not in ok_status:
+            print("%s  QUEUED (%s is %s)" % (head, tab["label"], tab["agent_status"]))
+            continue
+        print("%s  -> %s: %s" % (head, tab["label"], text if len(text) < 100 else text[:97] + "..."))
+        if a.stage:
+            r = subprocess.run(["herdr-draft", tab["label"], text], capture_output=True, text=True)
+            if r.returncode != 0:
+                print("    failed: " + (r.stderr or r.stdout).strip())
+                continue
+            state[it["id"]] = {"tab": tab["label"], "staged_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+            os.makedirs(BASE, exist_ok=True)
+            with open(STATE, "w", encoding="utf-8") as f:
+                json.dump(state, f)
+    if not a.stage:
+        print("(dry run; use --stage to stage drafts)")
+
+
+if __name__ == "__main__":
+    main()

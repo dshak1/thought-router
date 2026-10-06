@@ -13,3 +13,8 @@ Personal thoughts only. No work-confidential content.
 ## Phone setup link
 `https://dshak1.github.io/thought-router/#t=<token>` stores the token and clears the fragment.
 Token: fine-grained PAT, repository access only `thought-inbox`, Contents read and write.
+
+## Routing to a herdr tab
+`thought-route` stages a thought as an editable draft (no Enter) only when it starts with `@<tab>`,
+for example `@rema-design add a dark mode toggle`. Unaddressed thoughts go nowhere and no model reads them.
+Only idle tabs receive drafts; others stay queued. Default is a dry run; `--stage` applies it.
