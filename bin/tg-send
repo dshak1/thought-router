@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+"""Send to Diar's own Telegram chat via a bot. Stdlib only, outbound HTTPS only, no daemon.
+
+  tg-send setup                  find your chat id (after you message the bot once) and save it
+  tg-send text "message"
+  tg-send file PATH [caption]    photos go as photos, everything else as documents
+
+Config (not in git): ~/.config/thought-router/telegram-token and telegram-chat-id, mode 600.
+Only ever sends to the saved chat id. Callers must get the user's yes first for anything outward.
+"""
+import json, mimetypes, os, sys, urllib.request, uuid
+
+CFG = os.path.expanduser("~/.config/thought-router")
+TOKEN_F, CHAT_F = os.path.join(CFG, "telegram-token"), os.path.join(CFG, "telegram-chat-id")
+
+
+def read(p):
+    try:
+        return open(p).read().strip()
+    except OSError:
+        return ""
+
+
+def api(method, data=None, body=None, ctype=None):
+    tok = read(TOKEN_F)
+    if not tok:
+        sys.exit("no token at %s (create a bot with @BotFather)" % TOKEN_F)
+    req = urllib.request.Request("https://api.telegram.org/bot%s/%s" % (tok, method), data=body or (json.dumps(data).encode() if data is not None else None),
+                                 headers={"Content-Type": ctype or "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return json.load(r)
+    except urllib.error.HTTPError as e:
+        sys.exit("telegram error %s: %s" % (e.code, e.read().decode()[:200].replace(tok, "***")))
+    except Exception as e:
+        sys.exit("telegram request failed: %s" % str(e).replace(tok, "***"))
+
+
+def chat():
+    c = read(CHAT_F)
+    if not c:
+        sys.exit("no chat id; message your bot once, then run: tg-send setup")
+    return c
+
+
+def multipart(fields, fname, path):
+    b = uuid.uuid4().hex
+    out = b""
+    for k, v in fields.items():
+        out += ('--%s\r\nContent-Disposition: form-data; name="%s"\r\n\r\n%s\r\n' % (b, k, v)).encode()
+    mt = mimetypes.guess_type(path)[0] or "application/octet-stream"
+    out += ('--%s\r\nContent-Disposition: form-data; name="%s"; filename="%s"\r\nContent-Type: %s\r\n\r\n' % (b, fname, os.path.basename(path), mt)).encode()
+    out += open(path, "rb").read() + ("\r\n--%s--\r\n" % b).encode()
+    return out, "multipart/form-data; boundary=" + b, mt
+
+
+def main():
+    a = sys.argv[1:]
+    if not a:
+        sys.exit(__doc__)
+    if a[0] == "setup":
+        ups = api("getUpdates")["result"]
+        chats = {u["message"]["chat"]["id"] for u in ups if "message" in u and u["message"]["chat"]["type"] == "private"}
+        if len(chats) != 1:
+            sys.exit("found %d private chats; message your bot once from your own account and retry" % len(chats))
+        os.makedirs(CFG, mode=0o700, exist_ok=True)
+        fd = os.open(CHAT_F, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        os.write(fd, str(chats.pop()).encode()); os.close(fd)
+        print("chat id saved")
+    elif a[0] == "text" and len(a) == 2:
+        api("sendMessage", {"chat_id": chat(), "text": a[1]})
+        print("sent")
+    elif a[0] == "file" and len(a) in (2, 3):
+        path = a[1]
+        if not os.path.isfile(path) or os.path.getsize(path) > 45 * 1024 * 1024:
+            sys.exit("not a file, or over 45 MB")
+        photo = (mimetypes.guess_type(path)[0] or "").startswith("image/") and os.path.getsize(path) < 9 * 1024 * 1024
+        fields = {"chat_id": chat()}
+        if len(a) == 3:
+            fields["caption"] = a[2]
+        body, ct, _ = multipart(fields, "photo" if photo else "document", path)
+        api("sendPhoto" if photo else "sendDocument", body=body, ctype=ct)
+        print("sent %s" % ("photo" if photo else "document"))
+    else:
+        sys.exit(__doc__)
+
+
+if __name__ == "__main__":
+    main()
