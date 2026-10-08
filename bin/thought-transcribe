@@ -8,13 +8,14 @@ so the page image is the only input. Output: ~/.local/share/thought-router/trans
 notes/<scan>.md per scan once all its pages are done. Idempotent: finished pages are skipped. Never sends anything anywhere
 except to the model call itself. Personal notes only.
 """
-import argparse, json, os, subprocess, sys
+import argparse, base64, json, os, subprocess, sys, time, urllib.error, urllib.request
 from datetime import datetime
 
 BASE = os.path.expanduser(os.environ.get("THOUGHT_ROUTER_HOME", "~/.local/share/thought-router"))
 JSONL = os.path.join(BASE, "inbox.jsonl")
 TDIR = os.path.join(BASE, "transcripts")
 NDIR = os.path.join(BASE, "notes")
+GKEY = os.path.expanduser("~/.config/thought-router/gemini-key")
 PROMPT = ("Read the image file at %s. It is a photo of a handwritten or printed notes page. "
           "Transcribe it exactly as written, keeping line breaks, lists, headings and any simple diagrams described in [brackets]. "
           "Mark unreadable words as [?]. Do not summarise, correct or add anything. Output only the transcription. "
@@ -30,12 +31,40 @@ def transcribe(path, model):
     return r.stdout.strip()
 
 
+def transcribe_gemini(path, model):
+    key = open(GKEY).read().strip()
+    img = base64.b64encode(open(path, "rb").read()).decode()
+    prompt = PROMPT.replace("Read the image file at %s. ", "Read the attached image. ")
+    body = {"contents": [{"parts": [{"text": prompt}, {"inline_data": {"mime_type": "image/jpeg", "data": img}}]}],
+            "generationConfig": {"temperature": 0}}
+    req = urllib.request.Request("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent" % model,
+                                 data=json.dumps(body).encode(), headers={"x-goog-api-key": key, "Content-Type": "application/json"})
+    for wait in (10, 30, 60, 0):
+        try:
+            d = json.load(urllib.request.urlopen(req, timeout=120))
+            break
+        except urllib.error.HTTPError as e:
+            if e.code not in (429, 500, 503) or not wait:
+                raise RuntimeError("http %s" % e.code)
+            time.sleep(wait)
+    text = "".join(x.get("text", "") for x in d["candidates"][0]["content"]["parts"]).strip()
+    if not text:
+        raise RuntimeError("empty output")
+    return text
+
+
 def main():
+    global TDIR, NDIR
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default="sonnet")
+    ap.add_argument("--provider", choices=["claude", "gemini"], default="claude")
+    ap.add_argument("--out", help="write transcripts and notes under this directory instead of the data directory")
+    ap.add_argument("--model", default=None)
     ap.add_argument("--limit", type=int, default=50)
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
+    a.model = a.model or ("gemini-3.5-flash" if a.provider == "gemini" else "sonnet")
+    if a.out:
+        TDIR, NDIR = os.path.join(a.out, "transcripts"), os.path.join(a.out, "notes")
     pages = []
     if os.path.exists(JSONL):
         for line in open(JSONL, encoding="utf-8"):
@@ -54,7 +83,7 @@ def main():
             print("would transcribe", p["id"][:8], "scan", p.get("scan"), "page", p.get("page"))
             continue
         try:
-            text = transcribe(p["file"], a.model)
+            text = (transcribe_gemini if a.provider == "gemini" else transcribe)(p["file"], a.model)
         except Exception as e:
             print("failed %s: %s" % (p["id"][:8], e), file=sys.stderr)
             continue

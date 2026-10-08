@@ -1,0 +1,31 @@
+#!/bin/sh
+# Session-bound watcher for Claude Code's Monitor tool. Pulls every 60 s and prints ONE line when
+# unseen thoughts appear (no model tokens are spent while nothing arrives). Runs only as long as the Monitor does.
+B="${THOUGHT_ROUTER_HOME:-$HOME/.local/share/thought-router}"
+last=0
+while true; do
+  thought-pull >/dev/null 2>&1
+  n=$(python3 - "$B" <<'PY'
+import json, os, sys
+b = sys.argv[1]
+try:
+    seen = set(json.load(open(b + "/surfaced.json")))
+except Exception:
+    seen = set()
+n = 0
+try:
+    for l in open(b + "/inbox.jsonl", encoding="utf-8"):
+        try:
+            if json.loads(l)["id"] not in seen:
+                n += 1
+        except Exception:
+            pass
+except Exception:
+    pass
+print(n)
+PY
+)
+  if [ "$n" -gt 0 ] && [ "$n" != "$last" ]; then echo "NEW phone thoughts: $n (run: echo '{}' | thought-hook)"; fi
+  last=$n
+  sleep 60
+done
