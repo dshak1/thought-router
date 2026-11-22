@@ -181,12 +181,18 @@ async function render() {
   else bn.hidden = true;
 }
 
+// The words on screen survive a reload, a crash or the browser dropping the page before Send. Per phone, cleared on Send.
+const DRAFT = 'tr_draft';
+function saveDraft() { try { const v = $('text').value; v ? localStorage.setItem(DRAFT, v) : localStorage.removeItem(DRAFT); } catch (e) {} }
+function restoreDraft() { try { const v = localStorage.getItem(DRAFT); if (v && !$('text').value) $('text').value = v; } catch (e) {} }
+
 async function submit(e) {
   e.preventDefault();
   const text = $('text').value.trim();
   if (!text) return;
   await putItem({ id: uuid(), text, created_at: new Date().toISOString(), device: device(), state: 'saved', err: '', attempts: 0 });
   $('text').value = '';
+  saveDraft();
   if (navigator.vibrate) navigator.vibrate(30);
   await render();
   flush();
@@ -194,6 +200,8 @@ async function submit(e) {
 
 function init() {
   takeTokenFromFragment();
+  restoreDraft();
+  $('text').addEventListener('input', saveDraft);
   $('form').addEventListener('submit', submit);
   $('retry').addEventListener('click', () => flush());
   $('refresh').addEventListener('click', async () => { await flush(); await refreshPulled(); });
